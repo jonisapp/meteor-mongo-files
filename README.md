@@ -2,11 +2,12 @@
 
 ## Introduction
 
-A Meteor library to make file uploading and managing as easy as possible. It offers a consistent and resilient file storage strategy, relying on busboy, mongodb and gridFS. The files are stored in MongoDB. The package is very lightweight (~25kB minified) and has only busboy as direct dependency.
+A Meteor library to make file uploading and managing as easy as possible. It offers a consistent and resilient file storage strategy, relying on [busboy](https://www.npmjs.com/package/busboy), [mongodb](https://www.mongodb.com/) and [gridFS](https://www.mongodb.com/docs/manual/core/gridfs/). The files are stored in MongoDB. The package is very lightweight (~25kB minified) and has only busboy as direct dependency.
 
-### What problem does it solve ?
+### What problem does it aim to solve ?
 
-Keeping consistency in a file management system is not an easy task. Why not integrate the files directly with the rest of the data ?
+Keeping consistency in a file management system is not an easy task. Why not **integrate the files directly with the rest of the data** ?
+Considering the Meteor ecosystem, there is currently only one well-maintained library for online file storage and management : [Meteor-files](https://github.com/veliovgroup/Meteor-Files). I have used it for different projects and I must say that it works like a charm. Meteor-Mongo-Files is not intended to replace it but to meet different needs. The main goal is to **reduce complexity to a minimum**. By focusing exclusively on MongoDB, one sacrifices the flexibility that a library such as Meteor-Files can offer, but with the advantage of providing an equally **powerful set of features** and **no boilerplate**.
 
 ### Benefits
 
@@ -20,17 +21,17 @@ Keeping consistency in a file management system is not an easy task. Why not int
 - It will increase overall costs if you use a managed DBaaS like Atlas.)
 - If you deal with a lot of big files, it will not perform as well as object storage.
 
-### 2 strategies
+### One library : 2 strategies
 
-Files can either be stored in their entirety (as MongoDB documents) or chunked by GridFS. In this second case, GridFS creates 2 collections : "collection.files" and "collection.chunks", which makes it possible to reconstitute the files.
-Let's evaluate which approach is better for your use case. Using one document per file seems simpler, but it also has a few disadvantages :
+Files can either be stored in their entirety (as MongoDB documents) or chunked by GridFS. In this second case, GridFS creates 2 collections: "collection.files" and "collection.chunks", which makes it possible to reconstitute the files.
+Let's evaluate which approach is better for your use case. Using one document per file seems simpler, but it also has a few disadvantages:
 
 - a MongoDB document is limited to 16Mb
 - if you store a file directly as a document, it cannot be streamed directly to the database. Hence the file will be temporarily loaded entirely into the memory which may lead to a decrease in overall performance.
 
 So this approach is generally preferred if you have a lot of small files or if you need low latency (even if it means increasing performance costs)
 
-And when it comes to GridFS, you can store files of unlimited size and files can be directly streamed from the DB to the client, but :
+And when it comes to GridFS, you can store files of unlimited size and files can be directly streamed from the DB to the client, but:
 
 - it will use more storage because additional information is stored within each chunk
 - it will need more processing power.
@@ -59,7 +60,7 @@ WebApp.connectHandlers.use('/api/documents', async (req, res, next) => {
   switch (req.method) {
     case 'POST':
       const saveDocumentToDB = await parseDocumentData(req);
-      await saveDocumentToDB(); break;
+      await saveDocumentToDB(/* custom file name and metadata */); break;
     case 'GET':
       downloadDocument(req, res); break;
     case 'PATCH':
@@ -97,6 +98,8 @@ formData.append('filename', file.name); // filename is sent separately because u
 await axios.post('/api/documents', formData);
 ```
 
+GET requests are based on 2 query params: `id` and `download`
+
 ```js
 // GET
 const res = await axios.get(
@@ -104,8 +107,7 @@ const res = await axios.get(
 );
 ```
 
-If download query param is true, it will trigger a download.
-It it's set to false, the file will be opened in the browser (provided that its format is supported)
+If download query param is true, it will trigger a download. If not, the file will be opened in the browser (provided that its format is supported). This parameter actually determines the Content-Disposition header of the response.
 
 ```html
 <!-- inline -->
@@ -120,9 +122,35 @@ It it's set to false, the file will be opened in the browser (provided that its 
 >
 ```
 
+## Take advantage of Meteor's reactivity
+
+When you create a GridFS bucket (see the example above) it also creates 2 MongoDB collections (if GridFS is enabled) or juste one (if disabled). In the case of our previous example, 2 collections were created: "documents.files" and "documents.chunks". These collections can be used as usual within Meteor.
+
+### GridFS enabled
+
+```js
+const Documents = new Mongo.Collection('documents.files');
+
+Meteor.publish('documents.files', function () {
+	return Documents.find({});
+});
+```
+
+### GridFS disabled
+
+With GridFS disabled, the only collection get the same name as the bucket. There is one particularity that requires our attention in this case: the MongoDB document has a field which holds all the file's data. Hence, for a reason that seems fairly obvious, the **"data" field <u>must</u> be excluded from our publication**.
+
+```js
+const Documents = new Mongo.Collection('documents');
+
+Meteor.publish('documents', function () {
+	return Documents.find({}, { fields: { data: 0 } });
+});
+```
+
 ## The whole picture (GridFS enabled)
 
-![GridFSUpload](documentation/GridFSFileUpload.png)
+![GridFSUpload](https://github.com/jonisapp/meteor-mongo-files/blob/main/documentation/GridFSFileUpload.png)
 
 ## License
 
