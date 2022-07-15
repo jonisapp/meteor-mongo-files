@@ -1,0 +1,56 @@
+@startuml
+Actor Maxime as actor
+
+box Computer #Gold
+Boundary "Browser"
+endbox
+
+box Web Server #LightBlue
+Control Controller
+Database "File Storage" as HDD
+Control "FS storage engine" as GridFS
+
+box Database #LightGreen
+Collections collection.files as files
+Collections collection.chunks as chunks
+endbox
+
+actor -> Browser: 1. Select a file on HDD
+
+group #00000022 upload transaction
+Browser -> Controller: POST request\n(file upload stream)
+Controller -> HDD: << temp file >>
+note right: to remain non-blocking, request is directly streamed into a temp file
+HDD -> GridFS: temp file stream
+note right
+once all data is transferred, temp
+file is streamed to the database
+through FS storage engine
+end note
+GridFS -> chunks: split file into << chunks >>
+chunks -> GridFS: creation status
+GridFS -> files: reference chunks\nas << file >>
+end
+
+files -> GridFS: creation status
+GridFS -> Controller: creation status + file metadata
+Controller ->x HDD: temp file
+Controller -> Browser: file metadata
+Browser -> actor: display file element
+actor -> Browser: 2. click download button
+
+group #00000022 download transaction
+Browser -> Controller: GET request
+Controller -> GridFS: file request
+GridFS -> files: request file\nmetadata
+files -> GridFS: file metadata
+GridFS -> chunks: request\nassociated chunks
+chunks -> GridFS: chunks
+GridFS -> Controller: file metadata + data stream
+Controller -> Browser: file metadata\n+ data stream
+note right
+a cache-control http header is set to avoid unnecessary downloads
+end note
+end
+Browser -> actor: deliver file inline\n or as download
+@enduml
